@@ -1,0 +1,111 @@
+import sys
+import os
+import csv
+
+# 패키지 설치 경로를 직접 추가
+cv2_path = r'C:\Users\kjs03\myenv\Lib\site-packages'
+mediapipe_path = r'C:\Users\kjs03\myenv\Lib\site-packages'
+
+sys.path.append(cv2_path)
+sys.path.append(mediapipe_path)
+
+# 모듈 로드 확인
+try:
+    import cv2
+    import mediapipe as mp
+    print("모듈이 성공적으로 로드되었습니다.")
+except ImportError as e:
+    print(f"모듈 로드 오류: {e}")
+    sys.exit()
+
+# Mediapipe 솔루션 초기화
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
+
+# 동영상 파일 경로 지정
+video_path = r'C:\Users\kjs03\Desktop\otani.mp4'
+output_csv_path = r'C:\Users\kjs03\Desktop\otani_body_parts_data.csv'
+
+# 동영상 파일 캡처 초기화
+cap = cv2.VideoCapture(video_path)
+
+# 동영상 파일이 제대로 열렸는지 확인
+if not cap.isOpened():
+    print("동영상 파일을 열 수 없습니다.")
+    exit()
+
+# CSV 파일 열기
+with open(output_csv_path, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    
+    # 신체 부분별로 사용할 랜드마크 인덱스
+    body_parts = {
+        'head': [0],  # 머리 (0: 코)
+        'shoulders': [11, 12],  # 어깨 (11: 왼쪽 어깨, 12: 오른쪽 어깨)
+        'arms': [13, 14, 15, 16],  # 팔 (13: 왼쪽 팔꿈치, 14: 오른쪽 팔꿈치, 15: 왼쪽 손목, 16: 오른쪽 손목)
+        'elbows': [13, 14],  # 팔꿈치 (13: 왼쪽 팔꿈치, 14: 오른쪽 팔꿈치)
+        'wrists': [15, 16],  # 손목 (15: 왼쪽 손목, 16: 오른쪽 손목)
+        'hips': [23, 24],  # 엉덩이 (23: 왼쪽 엉덩이, 24: 오른쪽 엉덩이)
+        'knees': [25, 26],  # 무릎 (25: 왼쪽 무릎, 26: 오른쪽 무릎)
+        'ankles': [27, 28]  # 발목 (27: 왼쪽 발목, 28: 오른쪽 발목)
+    }
+    
+    # 헤더 작성 (frame, 신체 부분별 x, y, z 좌표)
+    header = ['frame']
+    for part in body_parts:
+        for i in body_parts[part]:
+            header += [f'{part}_x_{i}', f'{part}_y_{i}', f'{part}_z_{i}']
+    writer.writerow(header)
+
+    # Pose 객체 초기화
+    with mp_pose.Pose(
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5) as pose:
+        
+        frame_count = 0
+        while True:
+            # 동영상에서 프레임 읽기
+            ret, frame = cap.read()
+            
+            if not ret:
+                print("동영상에서 프레임을 읽을 수 없습니다.")
+                break
+            
+            # BGR 이미지를 RGB로 변환
+            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # 포즈 감지
+            results = pose.process(image)
+
+            # 이미지에 포즈 주석 그리기
+            image.flags.writeable = True  # image를 수정할 수 있도록 설정
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # OpenCV로 다시 BGR 포맷으로 변환
+
+            if results.pose_landmarks:
+                landmarks = results.pose_landmarks.landmark
+                row = [frame_count]
+
+                # 신체 부분별로 좌표 기록
+                for part in body_parts:
+                    for i in body_parts[part]:
+                        landmark = landmarks[i]
+                        row += [landmark.x, landmark.y, landmark.z]
+
+                writer.writerow(row)
+
+                # 포즈 랜드마크 그리기
+                mp_drawing.draw_landmarks(
+                    image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+            
+            # 수정된 이미지를 화면에 표시
+            cv2.imshow('Pose Detection', image)
+
+            frame_count += 1
+
+            # 'q' 키를 누르면 루프 종료
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+# 동영상 파일과 창을 닫고 리소스를 해제
+cap.release()
+cv2.destroyAllWindows()
